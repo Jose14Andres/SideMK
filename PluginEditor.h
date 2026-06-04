@@ -3,6 +3,17 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
+class ChromePinkLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    ChromePinkLookAndFeel() = default;
+    ~ChromePinkLookAndFeel() override = default;
+
+    void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                           float sliderPos, const float rotaryStartAngle,
+                           const float rotaryEndAngle, juce::Slider& slider) override;
+};
+
 class SidechainCompressorAudioProcessorEditor : public juce::AudioProcessorEditor,
                                                  private juce::Timer
 {
@@ -38,6 +49,8 @@ private:
 
     // Updated at 10 Hz by the timer; triggers a repaint of the indicator only
     bool sidechainActive { false };
+
+    ChromePinkLookAndFeel chromePinkLookAndFeel;
 
     void setupKnob (KnobGroup& kg, const juce::String& labelText);
 
