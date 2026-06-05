@@ -1,0 +1,31 @@
+# ─── Build ───────────────────────────────────────────────────────────────────
+build/
+out/
+cmake-build-*/
+
+# ─── IDEs ────────────────────────────────────────────────────────────────────
+.vs/
+.vscode/settings.json
+.idea/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# ─── CMake ───────────────────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+
+# ─── macOS ───────────────────────────────────────────────────────────────────
+.DS_Store
+*.dSYM/
+
+# ─── Windows ─────────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
