@@ -1,6 +1,11 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+namespace
+{
+    constexpr float kNoiseFloorThreshold = 1.0e-6f;
+} // namespace
+
 //==============================================================================
 SidechainCompressorAudioProcessor::SidechainCompressorAudioProcessor()
     : AudioProcessor (BusesProperties()
@@ -116,10 +121,10 @@ void SidechainCompressorAudioProcessor::processBlock (
     juce::ScopedNoDenormals noDenormals;
 
     // --- Lock-free parameter reads (std::atomic<float>) ---
-    compressor.setThreshold (*thresholdParam);
-    compressor.setRatio     (*ratioParam);
-    compressor.setAttack    (*attackParam);
-    compressor.setRelease   (*releaseParam);
+    compressor.setThreshold (thresholdParam->load());
+    compressor.setRatio     (ratioParam->load());
+    compressor.setAttack    (attackParam->load());
+    compressor.setRelease   (releaseParam->load());
     const float makeupGain = juce::Decibels::decibelsToGain (gainParam->load());
 
     const int numSamples = buffer.getNumSamples();
@@ -162,6 +167,14 @@ void SidechainCompressorAudioProcessor::processBlock (
             // Dividing recovers the pure gain scalar without any extra state.
             const float processedSC = compressor.processSample (0, scSample);
             applyGain(scSample, processedSC, i);
+            const float gainFactor  = (std::abs (scSample) > kNoiseFloorThreshold)
+                                          ? (processedSC / scSample)
+                                          : 1.0f; // signal below noise floor → no compression
+
+            // Apply compression gain + makeup gain to main channels ONLY
+            const float totalGain = gainFactor * makeupGain;
+            mainL[i] *= totalGain;
+            mainR[i] *= totalGain;
         }
     }
     else
@@ -172,6 +185,13 @@ void SidechainCompressorAudioProcessor::processBlock (
             const float mainSample = mainL[i];
             const float processed  = compressor.processSample (0, mainSample);
             applyGain(mainSample, processed, i);
+            const float gainFactor = (std::abs (mainSample) > kNoiseFloorThreshold)
+                                         ? (processed / mainSample)
+                                         : 1.0f;
+
+            const float totalGain = gainFactor * makeupGain;
+            mainL[i] *= totalGain;
+            mainR[i] *= totalGain;
         }
     }
     // Note: sidechain channels (2–3) are intentionally left untouched in the output buffer.

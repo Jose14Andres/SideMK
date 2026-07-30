@@ -50,7 +50,7 @@ juce_add_plugin(SideMk
 
     # ── Identidad ──────────────────────────────────────────────────────────
     PRODUCT_NAME              "SideMk"           # nombre que muestra el host
-    COMPANY_NAME              "YourCompany"       # ← cambia esto
+    COMPANY_NAME              "Lily"              # ← cambia esto
     COMPANY_WEBSITE           "https://example.com"
 
     # Códigos de 4 caracteres obligatorios (OSType / Steinberg ID).
@@ -133,3 +133,10 @@ target_link_libraries(SideMk
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+juce_add_console_app(benchmark)
+target_sources(benchmark PRIVATE benchmark.cpp PluginEditor.cpp PluginProcessor.cpp)
+target_include_directories(benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+juce_generate_juce_header(benchmark)
+target_link_libraries(benchmark PRIVATE juce::juce_gui_basics juce::juce_graphics juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
+target_compile_definitions(benchmark PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)

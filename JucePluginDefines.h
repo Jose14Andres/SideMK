@@ -26,7 +26,7 @@
 #endif
 
 #ifndef JucePlugin_Manufacturer
- #define JucePlugin_Manufacturer          "YourCompany"
+ #define JucePlugin_Manufacturer          "Lily"
 #endif
 
 #ifndef JucePlugin_ManufacturerWebsite
@@ -150,5 +150,5 @@
 #endif
 
 #ifndef JucePlugin_CFBundleIdentifier
- #define JucePlugin_CFBundleIdentifier    "com.yourcompany.sidemk"
+ #define JucePlugin_CFBundleIdentifier    "com.lily.sidemk"
 #endif
