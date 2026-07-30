@@ -50,7 +50,7 @@ juce_add_plugin(SideMk
 
     # ── Identidad ──────────────────────────────────────────────────────────
     PRODUCT_NAME              "SideMk"           # nombre que muestra el host
-    COMPANY_NAME              "YourCompany"       # ← cambia esto
+    COMPANY_NAME              "Lily"              # ← cambia esto
     COMPANY_WEBSITE           "https://example.com"
 
     # Códigos de 4 caracteres obligatorios (OSType / Steinberg ID).
