@@ -1,6 +1,11 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+namespace
+{
+    constexpr float kNoiseFloorThreshold = 1.0e-6f;
+} // namespace
+
 //==============================================================================
 SidechainCompressorAudioProcessor::SidechainCompressorAudioProcessor()
     : AudioProcessor (BusesProperties()
@@ -150,7 +155,7 @@ void SidechainCompressorAudioProcessor::processBlock (
             // processSample() updates the internal envelope and returns (gain * scSample).
             // Dividing recovers the pure gain scalar without any extra state.
             const float processedSC = compressor.processSample (0, scSample);
-            const float gainFactor  = (std::abs (scSample) > 1.0e-6f)
+            const float gainFactor  = (std::abs (scSample) > kNoiseFloorThreshold)
                                           ? (processedSC / scSample)
                                           : 1.0f; // signal below noise floor → no compression
 
@@ -167,7 +172,7 @@ void SidechainCompressorAudioProcessor::processBlock (
         {
             const float mainSample = mainL[i];
             const float processed  = compressor.processSample (0, mainSample);
-            const float gainFactor = (std::abs (mainSample) > 1.0e-6f)
+            const float gainFactor = (std::abs (mainSample) > kNoiseFloorThreshold)
                                          ? (processed / mainSample)
                                          : 1.0f;
 
