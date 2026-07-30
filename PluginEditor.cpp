@@ -25,32 +25,54 @@ void ChromePinkLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
     auto centreX = (float) x + (float) width  * 0.5f;
     auto centreY = (float) y + (float) height * 0.5f;
-    auto rx = centreX - radius;
-    auto ry = centreY - radius;
-    auto rw = radius * 2.0f;
-
-    // Outer Chrome Ring (Bevel)
-    juce::ColourGradient bevelGradient (juce::Colours::black.withAlpha(0.6f), centreX, centreY - radius,
-                                        juce::Colours::white.withAlpha(0.4f), centreX, centreY + radius, false);
-    g.setGradientFill (bevelGradient);
-    g.fillEllipse (rx, ry, rw, rw);
-
-    // Inner Metallic Base
     float innerRadius = radius - 3.0f;
-    float irx = centreX - innerRadius;
-    float iry = centreY - innerRadius;
-    float irw = innerRadius * 2.0f;
-    juce::ColourGradient baseGradient (juce::Colour(0xff2a2a2a), centreX, centreY - innerRadius,
-                                       juce::Colour(0xff121212), centreX, centreY + innerRadius, false);
-    g.setGradientFill (baseGradient);
-    g.fillEllipse (irx, iry, irw, irw);
 
-    // Specular Highlight
-    float highlightRadius = innerRadius * 0.8f;
-    juce::ColourGradient highlightGradient (juce::Colours::white.withAlpha(0.15f), centreX, centreY - innerRadius,
-                                            juce::Colours::transparentWhite, centreX, centreY, false);
-    g.setGradientFill (highlightGradient);
-    g.fillEllipse (centreX - highlightRadius, centreY - innerRadius, highlightRadius * 2.0f, innerRadius);
+    auto key = std::make_pair(width, height);
+    if (cachedKnobImages.find(key) == cachedKnobImages.end())
+    {
+        float scale = (float) g.getInternalContext().getPhysicalPixelScaleFactor();
+        int physWidth = juce::roundToInt (width * scale);
+        int physHeight = juce::roundToInt (height * scale);
+
+        juce::Image newImage (juce::Image::ARGB, physWidth, physHeight, true);
+        juce::Graphics g2 (newImage);
+        g2.addTransform (juce::AffineTransform::scale (scale));
+
+        auto cx = (float) width * 0.5f;
+        auto cy = (float) height * 0.5f;
+        auto rx = cx - radius;
+        auto ry = cy - radius;
+        auto rw = radius * 2.0f;
+
+        // Outer Chrome Ring (Bevel)
+        juce::ColourGradient bevelGradient (juce::Colours::black.withAlpha(0.6f), cx, cy - radius,
+                                            juce::Colours::white.withAlpha(0.4f), cx, cy + radius, false);
+        g2.setGradientFill (bevelGradient);
+        g2.fillEllipse (rx, ry, rw, rw);
+
+        // Inner Metallic Base
+        float irx = cx - innerRadius;
+        float iry = cy - innerRadius;
+        float irw = innerRadius * 2.0f;
+        juce::ColourGradient baseGradient (juce::Colour(0xff2a2a2a), cx, cy - innerRadius,
+                                           juce::Colour(0xff121212), cx, cy + innerRadius, false);
+        g2.setGradientFill (baseGradient);
+        g2.fillEllipse (irx, iry, irw, irw);
+
+        // Specular Highlight
+        float highlightRadius = innerRadius * 0.8f;
+        juce::ColourGradient highlightGradient (juce::Colours::white.withAlpha(0.15f), cx, cy - innerRadius,
+                                                juce::Colours::transparentWhite, cx, cy, false);
+        g2.setGradientFill (highlightGradient);
+        g2.fillEllipse (cx - highlightRadius, cy - innerRadius, highlightRadius * 2.0f, innerRadius);
+
+        cachedKnobImages[key] = newImage;
+    }
+
+    auto& img = cachedKnobImages[key];
+    g.drawImage (img,
+                 (float) x, (float) y, (float) width, (float) height,
+                 0.0f, 0.0f, (float) img.getWidth(), (float) img.getHeight());
 
     // Track
     auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);

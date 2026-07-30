@@ -12,6 +12,8 @@ public:
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPos, const float rotaryStartAngle,
                            const float rotaryEndAngle, juce::Slider& slider) override;
+private:
+    std::map<std::pair<int, int>, juce::Image> cachedKnobImages;
 };
 
 class SidechainCompressorAudioProcessorEditor : public juce::AudioProcessorEditor,
