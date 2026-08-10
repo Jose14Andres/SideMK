@@ -140,3 +140,13 @@ target_include_directories(benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 juce_generate_juce_header(benchmark)
 target_link_libraries(benchmark PRIVATE juce::juce_gui_basics juce::juce_graphics juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
 target_compile_definitions(benchmark PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+
+juce_add_console_app(tests)
+target_sources(tests PRIVATE PluginProcessorTest.cpp PluginProcessor.cpp PluginEditor.cpp)
+target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+juce_generate_juce_header(tests)
+target_link_libraries(tests PRIVATE juce::juce_gui_basics juce::juce_graphics juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
+target_compile_definitions(tests PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+# Sync compile definitions from main plugin to tests as requested by reviewer
+target_compile_definitions(tests PRIVATE $<TARGET_PROPERTY:SideMk,COMPILE_DEFINITIONS>)
+target_include_directories(tests PRIVATE $<TARGET_PROPERTY:SideMk,INCLUDE_DIRECTORIES>)
