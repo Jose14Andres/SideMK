@@ -59,5 +59,9 @@ private:
     std::atomic<float>* releaseParam   { nullptr }; // ms  [1, 2000]
     std::atomic<float>* gainParam      { nullptr }; // dB  [-24, +24]
 
+    // Cached values to avoid recalculating decibelsToGain every block
+    float cachedGainParam = -1000.0f;
+    float cachedMakeupGain = 1.0f;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidechainCompressorAudioProcessor)
 };

@@ -125,7 +125,14 @@ void SidechainCompressorAudioProcessor::processBlock (
     compressor.setRatio     (ratioParam->load());
     compressor.setAttack    (attackParam->load());
     compressor.setRelease   (releaseParam->load());
-    const float makeupGain = juce::Decibels::decibelsToGain (gainParam->load());
+
+    const float currentGainParam = gainParam->load();
+    if (currentGainParam != cachedGainParam)
+    {
+        cachedGainParam = currentGainParam;
+        cachedMakeupGain = juce::Decibels::decibelsToGain (currentGainParam);
+    }
+    const float makeupGain = cachedMakeupGain;
 
     const int numSamples = buffer.getNumSamples();
 
