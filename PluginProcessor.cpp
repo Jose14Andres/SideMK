@@ -196,7 +196,8 @@ void SidechainCompressorAudioProcessor::getStateInformation (juce::MemoryBlock& 
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
-    copyXmlToBinary (*xml, destData);
+    if (xml != nullptr)
+        copyXmlToBinary (*xml, destData);
 }
 
 void SidechainCompressorAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
