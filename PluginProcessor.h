@@ -62,6 +62,11 @@ private:
     // Cached values to avoid recalculating decibelsToGain every block
     float cachedGainParam = -1000.0f;
     float cachedMakeupGain = 1.0f;
+    // Cached parameter values to avoid expensive redundant recalculations in compressor
+    float lastThreshold = -1000.0f;
+    float lastRatio     = -1000.0f;
+    float lastAttack    = -1000.0f;
+    float lastRelease   = -1000.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidechainCompressorAudioProcessor)
 };

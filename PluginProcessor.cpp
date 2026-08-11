@@ -133,6 +133,35 @@ void SidechainCompressorAudioProcessor::processBlock (
         cachedMakeupGain = juce::Decibels::decibelsToGain (currentGainParam);
     }
     const float makeupGain = cachedMakeupGain;
+    const float currentThreshold = thresholdParam->load();
+    if (currentThreshold != lastThreshold)
+    {
+        compressor.setThreshold (currentThreshold);
+        lastThreshold = currentThreshold;
+    }
+
+    const float currentRatio = ratioParam->load();
+    if (currentRatio != lastRatio)
+    {
+        compressor.setRatio (currentRatio);
+        lastRatio = currentRatio;
+    }
+
+    const float currentAttack = attackParam->load();
+    if (currentAttack != lastAttack)
+    {
+        compressor.setAttack (currentAttack);
+        lastAttack = currentAttack;
+    }
+
+    const float currentRelease = releaseParam->load();
+    if (currentRelease != lastRelease)
+    {
+        compressor.setRelease (currentRelease);
+        lastRelease = currentRelease;
+    }
+
+    const float makeupGain = juce::Decibels::decibelsToGain (gainParam->load());
 
     const int numSamples = buffer.getNumSamples();
 
@@ -203,7 +232,8 @@ void SidechainCompressorAudioProcessor::getStateInformation (juce::MemoryBlock& 
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
-    copyXmlToBinary (*xml, destData);
+    if (xml != nullptr)
+        copyXmlToBinary (*xml, destData);
 }
 
 void SidechainCompressorAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
