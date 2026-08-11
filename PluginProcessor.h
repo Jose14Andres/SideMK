@@ -59,5 +59,11 @@ private:
     std::atomic<float>* releaseParam   { nullptr }; // ms  [1, 2000]
     std::atomic<float>* gainParam      { nullptr }; // dB  [-24, +24]
 
+    // Cached parameter values to avoid expensive redundant recalculations in compressor
+    float lastThreshold = -1000.0f;
+    float lastRatio     = -1000.0f;
+    float lastAttack    = -1000.0f;
+    float lastRelease   = -1000.0f;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidechainCompressorAudioProcessor)
 };
