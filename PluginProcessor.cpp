@@ -62,20 +62,31 @@ SidechainCompressorAudioProcessor::createParameterLayout()
 //==============================================================================
 void SidechainCompressorAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Mono spec: the compressor runs a single-channel envelope detector
-    // that is fed the mixed sidechain signal (ch 0 only).
+    // Mono spec: the envelope follower runs a single-channel detector (ch 0) fed the
+    // stereo-linked detection signal.
     juce::dsp::ProcessSpec spec;
     spec.sampleRate       = sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32> (samplesPerBlock);
     spec.numChannels      = 1;
 
-    compressor.prepare (spec);
-    compressor.reset();
+    envelopeFilter.prepare (spec);
+    envelopeFilter.setLevelCalculationType (
+        juce::dsp::BallisticsFilter<float>::LevelCalculationType::peak);
+    envelopeFilter.reset();
+
+    // Control layer: 20 ms ramp on makeup gain. All allocation happens here, off the
+    // audio thread; processBlock only reads/advances the smoother.
+    makeupGainSmoothed.reset (sampleRate, 0.02);
+    makeupGainSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (gainParam->load()));
+
+    // Pre-allocate the per-sample gain scratch buffer so processBlock stays alloc-free.
+    gainBuffer.setSize (1, samplesPerBlock, false, false, true);
 }
 
 void SidechainCompressorAudioProcessor::releaseResources()
 {
-    compressor.reset();
+    envelopeFilter.reset();
 }
 
 //==============================================================================
@@ -96,18 +107,17 @@ bool SidechainCompressorAudioProcessor::isBusesLayoutSupported (const BusesLayou
 //==============================================================================
 //  processBlock — NO heap allocation, NO locks
 //
-//  Buffer layout when sidechain is active:
-//    ch 0  →  Main L   (read + write)
-//    ch 1  →  Main R   (read + write)
-//    ch 2  →  SC L     (read only)
-//    ch 3  →  SC R     (read only)
-//
-//  Strategy:
-//    1. Mix SC L+R → mono scSample
-//    2. Feed scSample into compressor.processSample() → updates the internal
-//       BallisticsFilter and returns (gain * scSample)
-//    3. Recover gain = processedSC / scSample   (exact; no alloc)
-//    4. Apply gain * makeupGain to Main L and Main R only
+//  Pipeline (all state pre-allocated in prepareToPlay):
+//    1. Control layer: read APVTS params (lock-free atomics), push makeup gain to the
+//       per-sample smoother, feed attack/release to the ballistics filter.
+//    2. Detection: pick the sidechain bus (if enabled) or the main bus as the source,
+//       stereo-link it to a single positive detector value per sample.
+//    3. Gain computer (Mejora 1): run the detector through juce::dsp::BallisticsFilter to
+//       get the envelope, then a hard-knee threshold/ratio curve → linear gain. No
+//       division: the follower's release governs how gain returns to unity in silence.
+//    4. Apply (Mejora 3): the per-sample total gain (compression * smoothed makeup) is
+//       written to a scratch buffer and multiplied into each main channel with the
+//       SIMD AudioBlock::multiplyBy.
 //==============================================================================
 void SidechainCompressorAudioProcessor::processBlock (
     juce::AudioBuffer<float>& buffer,
@@ -115,69 +125,60 @@ void SidechainCompressorAudioProcessor::processBlock (
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // --- Lock-free parameter reads (std::atomic<float>) ---
-    compressor.setThreshold (*thresholdParam);
-    compressor.setRatio     (*ratioParam);
-    compressor.setAttack    (*attackParam);
-    compressor.setRelease   (*releaseParam);
-    const float makeupGain = juce::Decibels::decibelsToGain (gainParam->load());
-
     const int numSamples = buffer.getNumSamples();
 
-    // Wrap full buffer in an AudioBlock (stack object, zero allocation).
-    // getSubsetChannelBlock() returns a lightweight view — just pointer arithmetic.
-    juce::dsp::AudioBlock<float> block (buffer);
+    // --- 1. Control layer: lock-free parameter reads (std::atomic<float>) ---
+    envelopeFilter.setAttackTime  (attackParam->load());
+    envelopeFilter.setReleaseTime (releaseParam->load());
+    const float thresholdDb = thresholdParam->load();
+    const float ratio       = ratioParam->load();
+    const float slope       = 1.0f / ratio - 1.0f;   // <= 0 : gain-reduction slope in dB
 
-    const bool hasSidechain = (buffer.getNumChannels() >= 4);
+    makeupGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (gainParam->load()));
 
-    // Main stereo sub-block (channels 0–1)
-    auto        mainBlock = block.getSubsetChannelBlock (0, 2);
-    float* const mainL    = mainBlock.getChannelPointer (0);
-    float* const mainR    = mainBlock.getChannelPointer (1);
+    // --- 2. Detection source via bus buffers (robust to channel layout) ---
+    auto mainBuffer = getBusBuffer (buffer, false, 0);           // main out (ch 0–1), in place
+    float* const mainL = mainBuffer.getWritePointer (0);
+    float* const mainR = mainBuffer.getWritePointer (1);
 
-    if (hasSidechain)
+    auto*      scBus        = getBus (true, 1);
+    const bool useSidechain = (scBus != nullptr) && scBus->isEnabled();
+
+    const float* detL = mainL;
+    const float* detR = mainR;
+    if (useSidechain)
     {
-        // Sidechain sub-block (channels 2–3) — read-only view
-        const auto      scBlock = block.getSubsetChannelBlock (2, 2);
-        const float* const scL  = scBlock.getChannelPointer (0);
-        const float* const scR  = scBlock.getChannelPointer (1);
-
-        for (int i = 0; i < numSamples; ++i)
-        {
-            // Mix sidechain L+R to mono for detection
-            const float scSample    = 0.5f * (scL[i] + scR[i]);
-
-            // processSample() updates the internal envelope and returns (gain * scSample).
-            // Dividing recovers the pure gain scalar without any extra state.
-            const float processedSC = compressor.processSample (0, scSample);
-            const float gainFactor  = (std::abs (scSample) > 1.0e-6f)
-                                          ? (processedSC / scSample)
-                                          : 1.0f; // signal below noise floor → no compression
-
-            // Apply compression gain + makeup gain to main channels ONLY
-            const float totalGain = gainFactor * makeupGain;
-            mainL[i] *= totalGain;
-            mainR[i] *= totalGain;
-        }
+        auto scBuffer = getBusBuffer (buffer, true, 1);         // read-only detection source
+        detL = scBuffer.getReadPointer (0);
+        detR = scBuffer.getReadPointer (scBuffer.getNumChannels() > 1 ? 1 : 0);
     }
-    else
+
+    // --- 3. Envelope → gain computer, written into the scratch gain buffer ---
+    float* const gainData = gainBuffer.getWritePointer (0);
+    for (int i = 0; i < numSamples; ++i)
     {
-        // No sidechain bus active → standard feedforward compression on Main L
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float mainSample = mainL[i];
-            const float processed  = compressor.processSample (0, mainSample);
-            const float gainFactor = (std::abs (mainSample) > 1.0e-6f)
-                                         ? (processed / mainSample)
-                                         : 1.0f;
+        // Stereo-linked peak detection (max of |L|,|R|) avoids the phase cancellation
+        // that an L+R sum can produce.
+        const float detector = juce::jmax (std::abs (detL[i]), std::abs (detR[i]));
 
-            const float totalGain = gainFactor * makeupGain;
-            mainL[i] *= totalGain;
-            mainR[i] *= totalGain;
-        }
+        const float env    = envelopeFilter.processSample (0, detector);
+        const float envDb  = juce::Decibels::gainToDecibels (env);
+        const float overDb = envDb - thresholdDb;
+        const float grDb   = overDb > 0.0f ? overDb * slope : 0.0f;   // hard knee
+
+        gainData[i] = juce::Decibels::decibelsToGain (grDb)
+                    * makeupGainSmoothed.getNextValue();
     }
-    // Note: sidechain channels (2–3) are intentionally left untouched in the output buffer.
-    // Hosts treat sidechain input channels as read-only and ignore them in output.
+
+    // --- 4. SIMD gain application to the main channels only ---
+    juce::dsp::AudioBlock<float> mainBlock (mainBuffer);
+    juce::dsp::AudioBlock<float> gainBlock (gainBuffer);
+    const auto gainView = gainBlock.getSubBlock (0, static_cast<size_t> (numSamples));
+
+    for (int ch = 0; ch < mainBuffer.getNumChannels(); ++ch)
+        mainBlock.getSingleChannelBlock (static_cast<size_t> (ch)).multiplyBy (gainView);
+
+    // Note: sidechain input channels are never written — hosts treat them as read-only.
 }
 
 //==============================================================================

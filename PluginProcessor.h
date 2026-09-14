@@ -49,8 +49,21 @@ public:
 
 private:
     //==============================================================================
-    // DSP — prepared once in prepareToPlay; used mono (1 channel) for sidechain detection
-    juce::dsp::Compressor<float> compressor;
+    // DSP — all state prepared once in prepareToPlay; the audio thread never allocates.
+    //
+    // Envelope follower (mono, ch 0): replaces the old juce::dsp::Compressor. Feeding it
+    // the detection signal and computing gain from the returned envelope avoids the
+    // per-sample division used previously, and lets the ballistics' release govern how
+    // gain returns to unity when the detection signal falls silent.
+    juce::dsp::BallisticsFilter<float> envelopeFilter;
+
+    // Control layer (Mejora 2): makeup gain is ramped per sample to kill automation clicks.
+    // Multiplicative smoothing is safe here — makeup gain is never 0 (range [-24, +24] dB).
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> makeupGainSmoothed;
+
+    // Scratch gain vector, sized in prepareToPlay. Holds the per-sample total gain
+    // (compression * makeup) so it can be applied to the main bus with a SIMD block multiply.
+    juce::AudioBuffer<float> gainBuffer;
 
     // Lock-free raw pointers into the APVTS parameter store
     std::atomic<float>* thresholdParam { nullptr }; // dB  [-60, 0]
