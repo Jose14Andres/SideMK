@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "GainComputer.h"
 
 //==============================================================================
 SidechainCompressorAudioProcessor::SidechainCompressorAudioProcessor()
@@ -134,7 +135,6 @@ void SidechainCompressorAudioProcessor::processBlock (
     envelopeFilter.setReleaseTime (releaseParam->load());
     const float thresholdDb = thresholdParam->load();
     const float ratio       = ratioParam->load();
-    const float slope       = 1.0f / ratio - 1.0f;   // <= 0 : gain-reduction slope in dB
 
     makeupGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (gainParam->load()));
 
@@ -150,9 +150,15 @@ void SidechainCompressorAudioProcessor::processBlock (
     const float* detR = mainR;
     if (useSidechain)
     {
+        // Some hosts report the bus as enabled yet deliver no sidechain channels (e.g.
+        // nothing routed to it). Only switch source when there is a channel to read;
+        // otherwise fall back to the main signal instead of reading an invalid pointer.
         auto scBuffer = getBusBuffer (buffer, true, 1);         // read-only detection source
-        detL = scBuffer.getReadPointer (0);
-        detR = scBuffer.getReadPointer (scBuffer.getNumChannels() > 1 ? 1 : 0);
+        if (scBuffer.getNumChannels() > 0)
+        {
+            detL = scBuffer.getReadPointer (0);
+            detR = scBuffer.getReadPointer (scBuffer.getNumChannels() > 1 ? 1 : 0);
+        }
     }
 
     // --- 3 + 4, chunked: hosts may deliver blocks larger than the samplesPerBlock hinted
@@ -185,10 +191,9 @@ void SidechainCompressorAudioProcessor::processBlock (
             const float detector = juce::jmax (std::abs (detL[start + i]),
                                                std::abs (detR[start + i]));
 
-            const float env    = envelopeFilter.processSample (0, detector);
-            const float envDb  = juce::Decibels::gainToDecibels (env);
-            const float overDb = envDb - thresholdDb;
-            const float grDb   = overDb > 0.0f ? overDb * slope : 0.0f;   // hard knee
+            const float env   = envelopeFilter.processSample (0, detector);
+            const float envDb = juce::Decibels::gainToDecibels (env);
+            const float grDb  = sidemk::computeGainReductionDb (envDb, thresholdDb, ratio);
 
             peakReductionDb = juce::jmax (peakReductionDb, -grDb);
 

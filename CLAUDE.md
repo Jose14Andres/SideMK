@@ -42,9 +42,10 @@ There are no unit tests in this repo; verify changes by building the Standalone 
 
 ## Architecture
 
-Flat, four-file JUCE plugin. No `Source/` subdirectory.
+Flat JUCE plugin. No `Source/` subdirectory.
 
 - **`PluginProcessor.{h,cpp}`** — `SidechainCompressorAudioProcessor`. Audio engine + parameters.
+- **`GainComputer.h`** — `sidemk::computeGainReductionDb()`, the static compression curve as a pure, JUCE-free header-only function (unit-testable in isolation). Header-only, so it is not listed in `target_sources`.
 - **`PluginEditor.{h,cpp}`** — `SidechainCompressorAudioProcessorEditor` + `ChromePinkLookAndFeel` + `GainReductionMeter`. The GUI.
 - **`JucePluginDefines.h`** — canonical `JucePlugin_*` macros. Must be included **before** `<JuceHeader.h>`. `juce_add_plugin()` also injects these as compiler flags; the `#ifndef` guards in the header make it a safe fallback for non-CMake builds / IntelliSense.
 
@@ -59,7 +60,7 @@ Buses are accessed with `getBusBuffer()` (not raw channel indices). When the sid
 There is **no `juce::dsp::Compressor`** — it was replaced by a hand-rolled detector + gain computer (documented in the `processBlock` comment block). Pipeline per block:
 1. **Control layer** — read params from cached atomics; feed attack/release to the envelope filter; set the makeup-gain smoother's target.
 2. **Detection** — stereo-linked peak: `max(|L|, |R|)` of the detection source per sample (avoids L+R phase cancellation).
-3. **Gain computer** — `juce::dsp::BallisticsFilter<float>` (mono, `peak` level type) produces the envelope; convert to dB and apply a **hard-knee** curve: `grDb = (envDb - threshold) * (1/ratio - 1)` above threshold, else 0. No division-based gain recovery.
+3. **Gain computer** — `juce::dsp::BallisticsFilter<float>` (mono, `peak` level type) produces the envelope; convert to dB and apply a **hard-knee** curve via `sidemk::computeGainReductionDb()` (`GainComputer.h`): `grDb = (envDb - threshold) * (1/ratio - 1)` above threshold, else 0. No division-based gain recovery. If the sidechain bus is enabled but the host delivers 0 channels on it, detection falls back to the main signal.
 4. **Apply** — per-sample `gain(grDb) × makeupGainSmoothed` is written to the pre-allocated `gainBuffer`, then multiplied into the **main** channels only with SIMD `AudioBlock::multiplyBy`. Sidechain channels are never written.
 
 Makeup gain uses `SmoothedValue<…, Multiplicative>` with a 20 ms ramp (safe because the range never reaches 0 linear).
