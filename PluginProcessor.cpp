@@ -126,6 +126,18 @@ void SidechainCompressorAudioProcessor::processBlock (
     compressor.setAttack    (attackParam->load(std::memory_order_relaxed));
     compressor.setRelease   (releaseParam->load(std::memory_order_relaxed));
     const float makeupGain = juce::Decibels::decibelsToGain (gainParam->load(std::memory_order_relaxed));
+    compressor.setThreshold (thresholdParam->load());
+    compressor.setRatio     (ratioParam->load());
+    compressor.setAttack    (attackParam->load());
+    compressor.setRelease   (releaseParam->load());
+
+    const float currentGainParam = gainParam->load();
+    if (currentGainParam != cachedGainParam)
+    {
+        cachedGainParam = currentGainParam;
+        cachedMakeupGain = juce::Decibels::decibelsToGain (currentGainParam);
+    }
+    const float makeupGain = cachedMakeupGain;
     const float currentThreshold = thresholdParam->load();
     if (currentThreshold != lastThreshold)
     {
@@ -169,6 +181,17 @@ void SidechainCompressorAudioProcessor::processBlock (
     float* const mainL    = mainBlock.getChannelPointer (0);
     float* const mainR    = mainBlock.getChannelPointer (1);
 
+    // Lambda to apply compression gain + makeup gain to main channels ONLY
+    auto applyGain = [&](float sample, float processed, int i) {
+        const float gainFactor = (std::abs (sample) > 1.0e-6f)
+                                     ? (processed / sample)
+                                     : 1.0f; // signal below noise floor → no compression
+
+        const float totalGain = gainFactor * makeupGain;
+        mainL[i] *= totalGain;
+        mainR[i] *= totalGain;
+    };
+
     if (hasSidechain)
     {
         // Sidechain sub-block (channels 2–3) — read-only view
@@ -184,6 +207,7 @@ void SidechainCompressorAudioProcessor::processBlock (
             // processSample() updates the internal envelope and returns (gain * scSample).
             // Dividing recovers the pure gain scalar without any extra state.
             const float processedSC = compressor.processSample (0, scSample);
+            applyGain(scSample, processedSC, i);
             const float gainFactor  = (std::abs (scSample) > kNoiseFloorThreshold)
                                           ? (processedSC / scSample)
                                           : 1.0f; // signal below noise floor → no compression
@@ -201,6 +225,7 @@ void SidechainCompressorAudioProcessor::processBlock (
         {
             const float mainSample = mainL[i];
             const float processed  = compressor.processSample (0, mainSample);
+            applyGain(mainSample, processed, i);
             const float gainFactor = (std::abs (mainSample) > kNoiseFloorThreshold)
                                          ? (processed / mainSample)
                                          : 1.0f;
