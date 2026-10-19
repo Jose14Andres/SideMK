@@ -1,0 +1,21 @@
+# Mantiene la imagen Docker liviana y evita copiar caches de build del host
+# (especialmente el build/ de Windows) dentro del contenedor Linux.
+.git/
+build/
+build-linux/
+out/
+dist/
+cmake-build-*/
+_deps/
+
+# JUCE local: dejar que FetchContent lo descargue dentro del contenedor.
+# (Comenta la siguiente linea si prefieres copiar tu checkout local de JUCE.)
+JUCE/
+
+# IDEs / SO
+.vs/
+.vscode/
+.idea/
+*.user
+.DS_Store
+Thumbs.db
