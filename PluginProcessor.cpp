@@ -121,6 +121,18 @@ void SidechainCompressorAudioProcessor::processBlock (
     juce::ScopedNoDenormals noDenormals;
 
     // --- Lock-free parameter reads (std::atomic<float>) ---
+    compressor.setThreshold (thresholdParam->load());
+    compressor.setRatio     (ratioParam->load());
+    compressor.setAttack    (attackParam->load());
+    compressor.setRelease   (releaseParam->load());
+
+    const float currentGainParam = gainParam->load();
+    if (currentGainParam != cachedGainParam)
+    {
+        cachedGainParam = currentGainParam;
+        cachedMakeupGain = juce::Decibels::decibelsToGain (currentGainParam);
+    }
+    const float makeupGain = cachedMakeupGain;
     const float currentThreshold = thresholdParam->load();
     if (currentThreshold != lastThreshold)
     {
