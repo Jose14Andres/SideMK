@@ -16,3 +16,12 @@ CMakeLists.txt text eol=lf
 *.wav   binary
 *.ttf   binary
 *.otf   binary
+
+# Archivos que se ejecutan dentro de Linux (Docker): siempre LF,
+# aunque el repo se clone en Windows con core.autocrlf=true.
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+.dockerignore text eol=lf
+
+# Scripts de Windows: CRLF
+*.ps1         text eol=crlf
