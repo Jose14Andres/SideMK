@@ -10,7 +10,7 @@
     Si modificas un valor aquí, actualiza CMakeLists.txt (y viceversa):
       JucePlugin_Name              ↔  PRODUCT_NAME
       JucePlugin_Manufacturer      ↔  COMPANY_NAME
-      JucePlugin_ManufacturerCode  ↔  PLUGIN_MANUFACTURER_CODE  "Yrcm"
+      JucePlugin_ManufacturerCode  ↔  PLUGIN_MANUFACTURER_CODE  "Lily"
       JucePlugin_PluginCode        ↔  PLUGIN_CODE               "Smk1"
 */
 
@@ -26,11 +26,11 @@
 #endif
 
 #ifndef JucePlugin_Manufacturer
- #define JucePlugin_Manufacturer          "YourCompany"
+ #define JucePlugin_Manufacturer          "Lily"
 #endif
 
 #ifndef JucePlugin_ManufacturerWebsite
- #define JucePlugin_ManufacturerWebsite   "https://example.com"
+ #define JucePlugin_ManufacturerWebsite   "https://lily.audio"
 #endif
 
 #ifndef JucePlugin_ManufacturerEmail
@@ -38,10 +38,10 @@
 #endif
 
 // Códigos OSType de 4 caracteres — deben coincidir con CMakeLists.txt
-//   'Y'=0x59  'r'=0x72  'c'=0x63  'm'=0x6D  →  "Yrcm" = 0x5972636D
+//   'L'=0x4C  'i'=0x69  'l'=0x6C  'y'=0x79  →  "Lily" = 0x4C696C79
 //   'S'=0x53  'm'=0x6D  'k'=0x6B  '1'=0x31  →  "Smk1" = 0x536D6B31
 #ifndef JucePlugin_ManufacturerCode
- #define JucePlugin_ManufacturerCode      0x5972636D
+ #define JucePlugin_ManufacturerCode      0x4C696C79
 #endif
 
 #ifndef JucePlugin_PluginCode
@@ -150,5 +150,5 @@
 #endif
 
 #ifndef JucePlugin_CFBundleIdentifier
- #define JucePlugin_CFBundleIdentifier    "com.yourcompany.sidemk"
+ #define JucePlugin_CFBundleIdentifier    "com.lily.sidemk"
 #endif

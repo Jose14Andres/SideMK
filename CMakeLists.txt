@@ -50,13 +50,13 @@ juce_add_plugin(SideMk
 
     # ── Identidad ──────────────────────────────────────────────────────────
     PRODUCT_NAME              "SideMk"           # nombre que muestra el host
-    COMPANY_NAME              "YourCompany"       # ← cambia esto
-    COMPANY_WEBSITE           "https://example.com"
+    COMPANY_NAME              "Lily"
+    COMPANY_WEBSITE           "https://lily.audio"
 
     # Códigos de 4 caracteres obligatorios (OSType / Steinberg ID).
     # PLUGIN_MANUFACTURER_CODE debe ser único por empresa.
     # PLUGIN_CODE             debe ser único por plugin dentro de tu empresa.
-    PLUGIN_MANUFACTURER_CODE  "Yrcm"
+    PLUGIN_MANUFACTURER_CODE  "Lily"
     PLUGIN_CODE               "Smk1"
 
     # ── Formatos ───────────────────────────────────────────────────────────
