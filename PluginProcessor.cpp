@@ -118,6 +118,8 @@ bool SidechainCompressorAudioProcessor::isBusesLayoutSupported (const BusesLayou
 //    4. Apply (Mejora 3): the per-sample total gain (compression * smoothed makeup) is
 //       written to a scratch buffer and multiplied into each main channel with the
 //       SIMD AudioBlock::multiplyBy.
+//    Steps 3–4 run in slices of at most gainBuffer's size, so an oversized host block
+//    never overruns the scratch buffer.
 //==============================================================================
 void SidechainCompressorAudioProcessor::processBlock (
     juce::AudioBuffer<float>& buffer,
@@ -153,41 +155,59 @@ void SidechainCompressorAudioProcessor::processBlock (
         detR = scBuffer.getReadPointer (scBuffer.getNumChannels() > 1 ? 1 : 0);
     }
 
-    // --- 3. Envelope → gain computer, written into the scratch gain buffer ---
+    // --- 3 + 4, chunked: hosts may deliver blocks larger than the samplesPerBlock hinted
+    //     in prepareToPlay, so the host block is processed in slices no longer than the
+    //     pre-allocated gainBuffer. The envelope and smoother carry state across slices,
+    //     so the result is identical to a single pass.
+    const int maxChunk = gainBuffer.getNumSamples();
+    jassert (maxChunk > 0);   // prepareToPlay must run before processBlock
+    if (maxChunk <= 0)
+        return;               // unprepared: pass audio through untouched
+
     float* const gainData = gainBuffer.getWritePointer (0);
+
+    juce::dsp::AudioBlock<float> mainBlock (mainBuffer);
+    juce::dsp::AudioBlock<float> gainBlock (gainBuffer);
 
     // Track the block's peak gain reduction for the meter. grDb is <= 0 (a cut), so
     // the most reduction is the most negative grDb; we publish it as a positive magnitude.
     float peakReductionDb = 0.0f;
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int start = 0; start < numSamples; start += maxChunk)
     {
-        // Stereo-linked peak detection (max of |L|,|R|) avoids the phase cancellation
-        // that an L+R sum can produce.
-        const float detector = juce::jmax (std::abs (detL[i]), std::abs (detR[i]));
+        const int chunk = juce::jmin (maxChunk, numSamples - start);
 
-        const float env    = envelopeFilter.processSample (0, detector);
-        const float envDb  = juce::Decibels::gainToDecibels (env);
-        const float overDb = envDb - thresholdDb;
-        const float grDb   = overDb > 0.0f ? overDb * slope : 0.0f;   // hard knee
+        // --- 3. Envelope → gain computer, written into the scratch gain buffer ---
+        for (int i = 0; i < chunk; ++i)
+        {
+            // Stereo-linked peak detection (max of |L|,|R|) avoids the phase cancellation
+            // that an L+R sum can produce.
+            const float detector = juce::jmax (std::abs (detL[start + i]),
+                                               std::abs (detR[start + i]));
 
-        peakReductionDb = juce::jmax (peakReductionDb, -grDb);
+            const float env    = envelopeFilter.processSample (0, detector);
+            const float envDb  = juce::Decibels::gainToDecibels (env);
+            const float overDb = envDb - thresholdDb;
+            const float grDb   = overDb > 0.0f ? overDb * slope : 0.0f;   // hard knee
 
-        gainData[i] = juce::Decibels::decibelsToGain (grDb)
-                    * makeupGainSmoothed.getNextValue();
+            peakReductionDb = juce::jmax (peakReductionDb, -grDb);
+
+            gainData[i] = juce::Decibels::decibelsToGain (grDb)
+                        * makeupGainSmoothed.getNextValue();
+        }
+
+        // --- 4. SIMD gain application to the main channels only ---
+        const auto gainView = gainBlock.getSubBlock (0, static_cast<size_t> (chunk));
+        auto mainView = mainBlock.getSubBlock (static_cast<size_t> (start),
+                                               static_cast<size_t> (chunk));
+
+        for (size_t ch = 0; ch < mainView.getNumChannels(); ++ch)
+            mainView.getSingleChannelBlock (ch).multiplyBy (gainView);
     }
 
     // Publish to the meter (lock-free, no allocation). Relaxed ordering is sufficient:
     // this is a single independent scalar with no happens-before relationship to guard.
     currentGainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
-
-    // --- 4. SIMD gain application to the main channels only ---
-    juce::dsp::AudioBlock<float> mainBlock (mainBuffer);
-    juce::dsp::AudioBlock<float> gainBlock (gainBuffer);
-    const auto gainView = gainBlock.getSubBlock (0, static_cast<size_t> (numSamples));
-
-    for (int ch = 0; ch < mainBuffer.getNumChannels(); ++ch)
-        mainBlock.getSingleChannelBlock (static_cast<size_t> (ch)).multiplyBy (gainView);
 
     // Note: sidechain input channels are never written — hosts treat them as read-only.
 }

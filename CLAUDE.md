@@ -66,7 +66,7 @@ Makeup gain uses `SmoothedValue<…, Multiplicative>` with a 20 ms ramp (safe be
 
 `processBlock` is strictly real-time safe: no heap allocation, no locks, `ScopedNoDenormals`, parameters read through cached `std::atomic<float>*` pointers. All DSP state (`envelopeFilter`, smoother, `gainBuffer`) is prepared in `prepareToPlay`.
 
-**Known caveat:** `gainBuffer` is sized to `samplesPerBlock` from `prepareToPlay`; a host delivering a larger block would overrun it. Not yet guarded.
+`gainBuffer` is sized to `samplesPerBlock` from `prepareToPlay`, but hosts may deliver larger blocks, so steps 3–4 run in slices of at most `gainBuffer.getNumSamples()` samples. Keep this chunking if you touch the loop — never index `gainBuffer` with the host block size.
 
 ### Metering (audio → GUI)
 
