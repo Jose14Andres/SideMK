@@ -155,6 +155,11 @@ void SidechainCompressorAudioProcessor::processBlock (
 
     // --- 3. Envelope → gain computer, written into the scratch gain buffer ---
     float* const gainData = gainBuffer.getWritePointer (0);
+
+    // Track the block's peak gain reduction for the meter. grDb is <= 0 (a cut), so
+    // the most reduction is the most negative grDb; we publish it as a positive magnitude.
+    float peakReductionDb = 0.0f;
+
     for (int i = 0; i < numSamples; ++i)
     {
         // Stereo-linked peak detection (max of |L|,|R|) avoids the phase cancellation
@@ -166,9 +171,15 @@ void SidechainCompressorAudioProcessor::processBlock (
         const float overDb = envDb - thresholdDb;
         const float grDb   = overDb > 0.0f ? overDb * slope : 0.0f;   // hard knee
 
+        peakReductionDb = juce::jmax (peakReductionDb, -grDb);
+
         gainData[i] = juce::Decibels::decibelsToGain (grDb)
                     * makeupGainSmoothed.getNextValue();
     }
+
+    // Publish to the meter (lock-free, no allocation). Relaxed ordering is sufficient:
+    // this is a single independent scalar with no happens-before relationship to guard.
+    currentGainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
 
     // --- 4. SIMD gain application to the main channels only ---
     juce::dsp::AudioBlock<float> mainBlock (mainBuffer);

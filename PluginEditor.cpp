@@ -3,8 +3,13 @@
 namespace
 {
     constexpr int kHeaderH = 60;
-    constexpr int kWinW    = 540;
+    constexpr int kWinW    = 580;   // widened to host the GR meter strip on the right
     constexpr int kWinH    = 300;
+
+    // GR meter strip (right edge of the content area) and the gap before the knobs
+    constexpr int kMeterStripW = 46;
+    constexpr int kMeterGap    = 10;
+    constexpr int kPad         = 10; // content padding, matches resized()
 
     // Palette
     const juce::Colour kBgColour      { 0xff121212 };
@@ -80,6 +85,60 @@ void ChromePinkLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
 }
 
 //==============================================================================
+void GainReductionMeter::refresh()
+{
+    const float target = processor.getGainReductionDb(); // positive dB magnitude
+
+    // Ballistics tuned for the eye, not the ear: snap up so transients register,
+    // ease down so the bar glides back instead of flickering.
+    if (target > displayDb)
+        displayDb = target;                          // instant attack
+    else
+        displayDb += (target - displayDb) * 0.28f;   // ~exponential release per tick
+
+    // Repaint only when the drawn height would actually change (idle silence is free).
+    if (std::abs (displayDb - lastDrawnDb) > 0.05f)
+    {
+        lastDrawnDb = displayDb;
+        repaint();
+    }
+}
+
+void GainReductionMeter::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+    const float corner = 4.0f;
+
+    // Recessed track
+    g.setColour (juce::Colour (0xff1a1a1a));
+    g.fillRoundedRectangle (bounds, corner);
+    g.setColour (juce::Colour (0xff252b3a));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), corner, 1.0f);
+
+    const float proportion = juce::jlimit (0.0f, 1.0f, displayDb / kMaxDb);
+    if (proportion > 0.001f)
+    {
+        // Reduction grows downward from the top (0 dB at the top of the track).
+        auto track = bounds.reduced (3.0f);
+        auto fill  = track.withHeight (track.getHeight() * proportion);
+
+        // Glow halo — a soft, wider, low-alpha pink wash behind the core bar
+        g.setColour (kAccentPink.withAlpha (0.22f));
+        g.fillRoundedRectangle (fill.expanded (3.0f, 1.0f), corner);
+
+        // Core: pink at the top fading to neon purple at the leading edge
+        juce::ColourGradient grad (kAccentPink,        fill.getCentreX(), fill.getY(),
+                                   juce::Colour (0xff8a2be2), fill.getCentreX(), fill.getBottom(), false);
+        g.setGradientFill (grad);
+        g.fillRoundedRectangle (fill, corner);
+
+        // Bright leading edge for a glowing "hot" tip
+        g.setColour (juce::Colours::white.withAlpha (0.65f));
+        g.fillRect (fill.getX(), fill.getBottom() - 1.5f, fill.getWidth(), 1.5f);
+    }
+}
+
+//==============================================================================
 SidechainCompressorAudioProcessorEditor::SidechainCompressorAudioProcessorEditor (
     SidechainCompressorAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
@@ -99,8 +158,18 @@ SidechainCompressorAudioProcessorEditor::SidechainCompressorAudioProcessorEditor
     releaseAtt   = std::make_unique<SliderAttachment> (p.apvts, "release",   release.slider);
     gainAtt      = std::make_unique<SliderAttachment> (p.apvts, "gain",      gain.slider);
 
+    // Gain-reduction meter + caption
+    addAndMakeVisible (grMeter);
+    grLabel.setText              ("GR", juce::dontSendNotification);
+    grLabel.setFont             (juce::FontOptions (9.5f).withStyle ("Bold"));
+    grLabel.setJustificationType (juce::Justification::centred);
+    grLabel.setColour           (juce::Label::textColourId, kLabelText);
+    addAndMakeVisible (grLabel);
+
     setSize (kWinW, kWinH);
-    startTimerHz (10); // poll sidechain status at 10 Hz
+
+    // 30 Hz drives the meter smoothly; the (cheap) sidechain poll rides the same clock.
+    startTimerHz (30);
 }
 
 SidechainCompressorAudioProcessorEditor::~SidechainCompressorAudioProcessorEditor()
@@ -136,13 +205,17 @@ void SidechainCompressorAudioProcessorEditor::setupKnob (KnobGroup& kg,
 //==============================================================================
 void SidechainCompressorAudioProcessorEditor::timerCallback()
 {
+    // Meter: eases toward the latest GR value and repaints only its own bounds.
+    grMeter.refresh();
+
+    // Sidechain indicator: a trivial bus-state check; repaint the top-right corner
+    // only on an actual transition, never the whole window.
     auto* scBus       = audioProcessor.getBus (true, 1);
     const bool active = (scBus != nullptr) && scBus->isEnabled();
 
     if (active != sidechainActive)
     {
         sidechainActive = active;
-        // Repaint only the indicator area (top-right corner), not the entire window
         repaint (getWidth() - 140, 0, 140, kHeaderH);
     }
 }
@@ -197,11 +270,14 @@ void SidechainCompressorAudioProcessorEditor::paint (juce::Graphics& g)
                  (int)ledX + 15, (int)ledY - 2, 110, 14,
                  juce::Justification::centredLeft);
 
-    // --- Dividers between knob columns ---
-    const int columnWidth = getWidth() / 5;
+    // --- Dividers between knob columns (aligned to the knob grid, which stops
+    //     before the meter strip) ---
+    const int gridLeft  = kPad;
+    const int gridRight = getWidth() - kPad - kMeterStripW - kMeterGap;
+    const int columnWidth = (gridRight - gridLeft) / 5;
     g.setColour (kDivider);
     for (int i = 1; i < 5; ++i)
-        g.drawVerticalLine (i * columnWidth, (float)kHeaderH + 8, (float)getHeight() - 8);
+        g.drawVerticalLine (gridLeft + i * columnWidth, (float)kHeaderH + 8, (float)getHeight() - 8);
 }
 
 //==============================================================================
@@ -211,7 +287,15 @@ void SidechainCompressorAudioProcessorEditor::resized()
     area.removeFromTop (kHeaderH);
 
     // Provide a neat padding around the grid
-    area = area.reduced (10, 10);
+    area = area.reduced (kPad, kPad);
+
+    // Reserve the right-hand strip for the GR meter, then a gap before the knobs.
+    auto meterCol = area.removeFromRight (kMeterStripW);
+    area.removeFromRight (kMeterGap);
+
+    // Meter caption sits under the bar, matching the knob-label rhythm.
+    grLabel.setBounds  (meterCol.removeFromBottom (20));
+    grMeter.setBounds  (meterCol.reduced (0, 6));
 
     KnobGroup* knobs[] = { &threshold, &ratio, &attack, &release, &gain };
     const int numKnobs = 5;

@@ -47,6 +47,15 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState apvts;
 
+    //==============================================================================
+    // Metering — audio thread → message thread, lock-free.
+    // Returns the peak gain reduction of the last processed block as a POSITIVE dB
+    // magnitude (0 = no reduction). Safe to call from the GUI/message thread.
+    float getGainReductionDb() const noexcept
+    {
+        return currentGainReductionDb.load (std::memory_order_relaxed);
+    }
+
 private:
     //==============================================================================
     // DSP — all state prepared once in prepareToPlay; the audio thread never allocates.
@@ -71,6 +80,12 @@ private:
     std::atomic<float>* attackParam    { nullptr }; // ms  [0.1, 500]
     std::atomic<float>* releaseParam   { nullptr }; // ms  [1, 2000]
     std::atomic<float>* gainParam      { nullptr }; // dB  [-24, +24]
+
+    // Metering bridge: written once per block by the audio thread (relaxed store),
+    // read by the editor's timer (relaxed load). A single float is naturally
+    // lock-free on every supported platform; std::atomic makes the visibility and
+    // tearing guarantees explicit. Holds the block's peak gain reduction in dB (>= 0).
+    std::atomic<float> currentGainReductionDb { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidechainCompressorAudioProcessor)
 };
