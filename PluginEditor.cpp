@@ -114,6 +114,24 @@ SidechainCompressorAudioProcessorEditor::SidechainCompressorAudioProcessorEditor
     setupKnob (release,   "RELEASE");
     setupKnob (gain,      "SIDECHAIN LEVEL");
 
+    setupKnob (scFilterCutoff, "SC CUTOFF");
+    setupKnob (scFilterRes,    "SC RES");
+
+    addAndMakeVisible (scFilterActiveToggle);
+    scFilterActiveToggle.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+
+    addAndMakeVisible (scFilterTypeCombo);
+    scFilterTypeCombo.addItemList ({ "Low Pass", "High Pass", "Band Pass" }, 1);
+    scFilterTypeCombo.setJustificationType (juce::Justification::centred);
+    // use pink text for combo box to fit aesthetic
+    scFilterTypeCombo.setColour(juce::ComboBox::textColourId, juce::Colour(0xfff652a0));
+    scFilterTypeCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff161a22));
+
+    addAndMakeVisible (scFilterTypeLabel);
+    scFilterTypeLabel.setText ("SC FILTER TYPE", juce::dontSendNotification);
+    scFilterTypeLabel.setJustificationType (juce::Justification::centred);
+    scFilterTypeLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+
     // Attachments connect each slider to its APVTS parameter (sets range + value automatically)
     thresholdAtt = std::make_unique<SliderAttachment> (p.apvts, "threshold", threshold.slider);
     ratioAtt     = std::make_unique<SliderAttachment> (p.apvts, "ratio",     ratio.slider);
@@ -121,7 +139,12 @@ SidechainCompressorAudioProcessorEditor::SidechainCompressorAudioProcessorEditor
     releaseAtt   = std::make_unique<SliderAttachment> (p.apvts, "release",   release.slider);
     gainAtt      = std::make_unique<SliderAttachment> (p.apvts, "gain",      gain.slider);
 
-    setSize (kWinW, kWinH);
+    scFilterCutoffAtt = std::make_unique<SliderAttachment> (p.apvts, "sc_filter_cutoff", scFilterCutoff.slider);
+    scFilterResAtt    = std::make_unique<SliderAttachment> (p.apvts, "sc_filter_res",    scFilterRes.slider);
+    scFilterActiveAtt = std::make_unique<ButtonAttachment> (p.apvts, "sc_filter_active", scFilterActiveToggle);
+    scFilterTypeAtt   = std::make_unique<ComboBoxAttachment> (p.apvts, "sc_filter_type", scFilterTypeCombo);
+
+    setSize (kWinW, kWinH + 120); // Make UI taller for new controls
     startTimerHz (10); // poll sidechain status at 10 Hz
 }
 
@@ -235,17 +258,44 @@ void SidechainCompressorAudioProcessorEditor::resized()
     // Provide a neat padding around the grid
     area = area.reduced (10, 10);
 
+    // Top row (main compressor controls)
+    auto topRow = area.removeFromTop (area.getHeight() / 2);
+
     KnobGroup* knobs[] = { &threshold, &ratio, &attack, &release, &gain };
     const int numKnobs = 5;
 
     // Using Rectangle::removeFromLeft is safe, effective, and perfectly forms a professional grid
-    const int itemWidth = area.getWidth() / numKnobs;
+    const int itemWidth = topRow.getWidth() / numKnobs;
 
     for (auto* kg : knobs)
     {
-        auto col = area.removeFromLeft (itemWidth);
+        auto col = topRow.removeFromLeft (itemWidth);
         auto contentArea = col.reduced (10, 10);
         kg->label.setBounds (contentArea.removeFromBottom (20));
         kg->slider.setBounds (contentArea);
     }
+
+    // Bottom row (filter controls)
+    auto bottomRow = area;
+
+    const int bottomItemWidth = bottomRow.getWidth() / 4;
+
+    // SC Active Toggle
+    auto toggleCol = bottomRow.removeFromLeft(bottomItemWidth).reduced(20, 40);
+    scFilterActiveToggle.setBounds(toggleCol);
+
+    // SC Filter Type
+    auto typeCol = bottomRow.removeFromLeft(bottomItemWidth).reduced(10, 30);
+    scFilterTypeLabel.setBounds(typeCol.removeFromTop(20));
+    scFilterTypeCombo.setBounds(typeCol.removeFromTop(30));
+
+    // SC Filter Cutoff
+    auto cutoffCol = bottomRow.removeFromLeft(bottomItemWidth).reduced(10, 10);
+    scFilterCutoff.label.setBounds(cutoffCol.removeFromBottom(20));
+    scFilterCutoff.slider.setBounds(cutoffCol);
+
+    // SC Filter Resonance
+    auto resCol = bottomRow.reduced(10, 10);
+    scFilterRes.label.setBounds(resCol.removeFromBottom(20));
+    scFilterRes.slider.setBounds(resCol);
 }
