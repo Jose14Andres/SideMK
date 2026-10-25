@@ -40,14 +40,26 @@ private:
     };
 
     KnobGroup threshold, ratio, attack, release, gain;
+    KnobGroup scFilterCutoff, scFilterRes;
+
+    juce::ToggleButton scFilterActiveToggle { "SC Filter" };
+    juce::ComboBox     scFilterTypeCombo;
+    juce::Label        scFilterTypeLabel;
 
     // unique_ptr allows deferred creation (after setupKnob configures each slider)
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+
     std::unique_ptr<SliderAttachment> thresholdAtt;
     std::unique_ptr<SliderAttachment> ratioAtt;
     std::unique_ptr<SliderAttachment> attackAtt;
     std::unique_ptr<SliderAttachment> releaseAtt;
     std::unique_ptr<SliderAttachment> gainAtt;
+    std::unique_ptr<SliderAttachment> scFilterCutoffAtt;
+    std::unique_ptr<SliderAttachment> scFilterResAtt;
+    std::unique_ptr<ButtonAttachment> scFilterActiveAtt;
+    std::unique_ptr<ComboBoxAttachment> scFilterTypeAtt;
 
     // Updated at 10 Hz by the timer; triggers a repaint of the indicator only
     bool sidechainActive { false };

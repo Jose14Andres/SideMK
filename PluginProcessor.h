@@ -51,6 +51,7 @@ private:
     //==============================================================================
     // DSP — prepared once in prepareToPlay; used mono (1 channel) for sidechain detection
     juce::dsp::Compressor<float> compressor;
+    juce::dsp::StateVariableTPTFilter<float> scFilter;
 
     // Lock-free raw pointers into the APVTS parameter store
     std::atomic<float>* thresholdParam { nullptr }; // dB  [-60, 0]
@@ -58,6 +59,11 @@ private:
     std::atomic<float>* attackParam    { nullptr }; // ms  [0.1, 500]
     std::atomic<float>* releaseParam   { nullptr }; // ms  [1, 2000]
     std::atomic<float>* gainParam      { nullptr }; // dB  [-24, +24]
+
+    std::atomic<float>* scFilterActiveParam { nullptr }; // bool
+    std::atomic<float>* scFilterTypeParam   { nullptr }; // choice [0, 1, 2] -> LP, HP, BP
+    std::atomic<float>* scFilterCutoffParam { nullptr }; // Hz [20, 20000]
+    std::atomic<float>* scFilterResParam    { nullptr }; // [0.1, 10.0]
 
     // Cached values to avoid recalculating decibelsToGain every block
     float cachedGainParam = -1000.0f;
@@ -67,6 +73,11 @@ private:
     float lastRatio     = -1000.0f;
     float lastAttack    = -1000.0f;
     float lastRelease   = -1000.0f;
+
+    float lastScFilterActive = -1.0f;
+    float lastScFilterType   = -1.0f;
+    float lastScFilterCutoff = -1.0f;
+    float lastScFilterRes    = -1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidechainCompressorAudioProcessor)
 };
