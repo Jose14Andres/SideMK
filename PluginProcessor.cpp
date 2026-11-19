@@ -40,6 +40,11 @@ SidechainCompressorAudioProcessor::SidechainCompressorAudioProcessor()
     modeParam      = apvts.getRawParameterValue ("mode");
     rateParam      = apvts.getRawParameterValue ("rate");
     depthParam     = apvts.getRawParameterValue ("depth");
+
+    scFilterActiveParam = apvts.getRawParameterValue ("sc_filter_active");
+    scFilterTypeParam   = apvts.getRawParameterValue ("sc_filter_type");
+    scFilterCutoffParam = apvts.getRawParameterValue ("sc_filter_cutoff");
+    scFilterResParam    = apvts.getRawParameterValue ("sc_filter_res");
 }
 
 SidechainCompressorAudioProcessor::~SidechainCompressorAudioProcessor() {}
@@ -94,6 +99,25 @@ SidechainCompressorAudioProcessor::createParameterLayout()
         juce::ParameterID { "depth", 2 }, "Pump Depth",
         juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // Sidechain Filter Active
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "sc_filter_active", 1 }, "SC Filter Active", false));
+
+    // Sidechain Filter Type (0 = LP, 1 = HP, 2 = BP)
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "sc_filter_type", 1 }, "SC Filter Type",
+        juce::StringArray { "Low Pass", "High Pass", "Band Pass" }, 0));
+
+    // Sidechain Filter Cutoff
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "sc_filter_cutoff", 1 }, "SC Filter Cutoff",
+        juce::NormalisableRange<float> (20.0f, 20000.0f, 1.0f, 0.3f), 1000.0f,
+        juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+    // Sidechain Filter Resonance
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "sc_filter_res", 1 }, "SC Filter Resonance",
+        juce::NormalisableRange<float> (0.1f, 10.0f, 0.1f), 0.707f));
 
     return { params.begin(), params.end() };
 }
@@ -119,11 +143,14 @@ void SidechainCompressorAudioProcessor::prepareToPlay (double sampleRate, int sa
     depthSmoothed.setCurrentAndTargetValue (depthParam->load (std::memory_order_relaxed) * 0.01f);
 
     pumpPhase = 0.0;
+    scFilter.prepare (spec);
+    scFilter.reset();
 }
 
 void SidechainCompressorAudioProcessor::releaseResources()
 {
     compressor.reset();
+    scFilter.reset();
 }
 
 //==============================================================================
@@ -179,6 +206,15 @@ void SidechainCompressorAudioProcessor::processBlock (
     depthSmoothed .setTargetValue (loadParameter (depthParam) * 0.01f);
 
     const float currentThreshold = loadParameter (thresholdParam);
+    const float currentGainParam = gainParam->load(std::memory_order_relaxed);
+    if (currentGainParam != cachedGainParam)
+    {
+        cachedGainParam = currentGainParam;
+        cachedMakeupGain = juce::Decibels::decibelsToGain (currentGainParam);
+    }
+    const float makeupGain = cachedMakeupGain;
+
+    const float currentThreshold = thresholdParam->load(std::memory_order_relaxed);
     if (currentThreshold != lastThreshold)
     {
         compressor.setThreshold (currentThreshold);
@@ -186,6 +222,7 @@ void SidechainCompressorAudioProcessor::processBlock (
     }
 
     const float currentRatio = loadParameter (ratioParam);
+    const float currentRatio = ratioParam->load(std::memory_order_relaxed);
     if (currentRatio != lastRatio)
     {
         compressor.setRatio (currentRatio);
@@ -193,6 +230,7 @@ void SidechainCompressorAudioProcessor::processBlock (
     }
 
     const float currentAttack = loadParameter (attackParam);
+    const float currentAttack = attackParam->load(std::memory_order_relaxed);
     if (currentAttack != lastAttack)
     {
         compressor.setAttack (currentAttack);
@@ -200,6 +238,7 @@ void SidechainCompressorAudioProcessor::processBlock (
     }
 
     const float currentRelease = loadParameter (releaseParam);
+    const float currentRelease = releaseParam->load(std::memory_order_relaxed);
     if (currentRelease != lastRelease)
     {
         compressor.setRelease (currentRelease);
@@ -213,6 +252,34 @@ void SidechainCompressorAudioProcessor::processBlock (
         // Do not resume compression from an envelope that froze while pumping.
         if (mode == modeCompressor)
             compressor.reset();
+    const bool scFilterActive = scFilterActiveParam->load(std::memory_order_relaxed) > 0.5f;
+
+    const float currentScFilterType = scFilterTypeParam->load(std::memory_order_relaxed);
+    if (currentScFilterType != lastScFilterType)
+    {
+        if (currentScFilterType < 0.5f)
+            scFilter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        else if (currentScFilterType < 1.5f)
+            scFilter.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+        else
+            scFilter.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+
+        lastScFilterType = currentScFilterType;
+    }
+
+    const float currentScFilterCutoff = scFilterCutoffParam->load(std::memory_order_relaxed);
+    if (currentScFilterCutoff != lastScFilterCutoff)
+    {
+        scFilter.setCutoffFrequency(currentScFilterCutoff);
+        lastScFilterCutoff = currentScFilterCutoff;
+    }
+
+    const float currentScFilterRes = scFilterResParam->load(std::memory_order_relaxed);
+    if (currentScFilterRes != lastScFilterRes)
+    {
+        scFilter.setResonance(currentScFilterRes);
+        lastScFilterRes = currentScFilterRes;
+    }
 
         lastMode = mode;
     }
@@ -277,6 +344,12 @@ void SidechainCompressorAudioProcessor::processPump (float* mainL, float* mainR,
                                         juce::roundToInt (rateParam->load (std::memory_order_relaxed)));
     double divisionPpq = rateToPpq (rateIndex);
     double bpm         = pump::kFallbackBpm;
+    if (hasSidechain)
+    {
+        // Sidechain sub-block (channels 2–3) — read-only view
+        const auto      scBlock = block.getSubsetChannelBlock (2, 2);
+        const float* const scL  = scBlock.getChannelPointer (0);
+        const float* const scR  = scBlock.getChannelPointer (1);
 
     bool   synced    = false;
     double hostPpq   = 0.0;
@@ -308,6 +381,23 @@ void SidechainCompressorAudioProcessor::processPump (float* mainL, float* mainR,
                             originPpq = *barStart;
                 }
             }
+            // Mix sidechain L+R to mono for detection
+            float scSample    = 0.5f * (scL[i] + scR[i]);
+
+            if (scFilterActive)
+                scSample = scFilter.processSample(0, scSample);
+
+            // processSample() updates the internal envelope and returns (gain * scSample).
+            // Dividing recovers the pure gain scalar without any extra state.
+            const float processedSC = compressor.processSample (0, scSample);
+            const float gainFactor  = (std::abs (scSample) > kNoiseFloorThreshold)
+                                          ? (processedSC / scSample)
+                                          : 1.0f; // signal below noise floor → no compression
+
+            // Apply compression gain + makeup gain to main channels ONLY
+            const float totalGain = gainFactor * makeupGain;
+            mainL[i] *= totalGain;
+            mainR[i] *= totalGain;
         }
     }
 
@@ -329,6 +419,24 @@ void SidechainCompressorAudioProcessor::processPump (float* mainL, float* mainR,
         phase += phaseInc;
         if (phase >= 1.0)
             phase = pump::wrapPhase (phase);
+        // No sidechain bus active → standard feedforward compression on Main L
+        // For detection we use a mono mix of the main signal
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float mainSampleMono = 0.5f * (mainL[i] + mainR[i]);
+
+            if (scFilterActive)
+                mainSampleMono = scFilter.processSample(0, mainSampleMono);
+
+            const float processed  = compressor.processSample (0, mainSampleMono);
+            const float gainFactor = (std::abs (mainSampleMono) > kNoiseFloorThreshold)
+                                         ? (processed / mainSampleMono)
+                                         : 1.0f;
+
+            const float totalGain = gainFactor * makeupGain;
+            mainL[i] *= totalGain;
+            mainR[i] *= totalGain;
+        }
     }
 
     pumpPhase = phase;
