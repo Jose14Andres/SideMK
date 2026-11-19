@@ -39,6 +39,10 @@ private:
         juce::Label  label;
     };
 
+    KnobGroup threshold, ratio, attack, release, depth, gain;
+
+    // Mode (Compressor / Pump) and pump rate selectors, shown in the header
+    juce::ComboBox modeBox, rateBox;
     KnobGroup threshold, ratio, attack, release, gain;
     KnobGroup scFilterCutoff, scFilterRes;
 
@@ -55,11 +59,20 @@ private:
     std::unique_ptr<SliderAttachment> ratioAtt;
     std::unique_ptr<SliderAttachment> attackAtt;
     std::unique_ptr<SliderAttachment> releaseAtt;
+    std::unique_ptr<SliderAttachment> depthAtt;
     std::unique_ptr<SliderAttachment> gainAtt;
     std::unique_ptr<SliderAttachment> scFilterCutoffAtt;
     std::unique_ptr<SliderAttachment> scFilterResAtt;
     std::unique_ptr<ButtonAttachment> scFilterActiveAtt;
     std::unique_ptr<ComboBoxAttachment> scFilterTypeAtt;
+
+    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    std::unique_ptr<ComboBoxAttachment> modeAtt;
+    std::unique_ptr<ComboBoxAttachment> rateAtt;
+
+    // Read on the message thread by the timer to dim controls the current mode ignores
+    std::atomic<float>* modeParam { nullptr };
+    bool pumpModeShown { false };
 
     // Updated at 10 Hz by the timer; triggers a repaint of the indicator only
     bool sidechainActive { false };
@@ -67,6 +80,8 @@ private:
     ChromePinkLookAndFeel chromePinkLookAndFeel;
 
     void setupKnob (KnobGroup& kg, const juce::String& labelText);
+    void setupComboBox (juce::ComboBox& box, const juce::String& parameterID);
+    void updateModeDependentControls (bool pumpMode);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidechainCompressorAudioProcessorEditor)
 };

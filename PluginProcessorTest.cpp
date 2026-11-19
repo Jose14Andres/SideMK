@@ -64,17 +64,4 @@ public:
 
 static PluginProcessorTest pluginProcessorTest;
 
-int main()
-{
-    juce::ScopedJuceInitialiser_GUI juceInitialiser;
-
-    juce::UnitTestRunner runner;
-    runner.runAllTests();
-
-    for (int i = 0; i < runner.getNumResults(); ++i)
-    {
-        if (runner.getResult(i)->failures > 0)
-            return 1;
-    }
-    return 0;
-}
+// main() lives in TestMain.cpp so every UnitTest in the target runs from one runner.

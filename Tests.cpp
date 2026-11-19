@@ -54,17 +54,4 @@ public:
 
 static BusesLayoutTest busesLayoutTest;
 
-int main (int argc, char* argv[])
-{
-    juce::ScopedJuceInitialiser_GUI juce_gui;
-    juce::UnitTestRunner runner;
-    runner.runAllTests();
-
-    // Return non-zero if tests fail
-    for (int i = 0; i < runner.getNumResults(); ++i)
-    {
-        if (runner.getResult(i)->failures > 0)
-            return 1;
-    }
-    return 0;
-}
+// main() lives in TestMain.cpp so every UnitTest in the target runs from one runner.
