@@ -87,6 +87,7 @@ juce_add_plugin(SideMk
 # ─────────────────────────────────────────────────────────────────────────────
 target_sources(SideMk PRIVATE
     JucePluginDefines.h   # fuente canónica de macros JucePlugin_*; ver comentarios internos
+    PumpCurve.h           # curva del modo pump (sin JUCE, testeable aparte)
     PluginProcessor.h
     PluginProcessor.cpp
     PluginEditor.h
@@ -148,8 +149,14 @@ juce_generate_juce_header(benchmark_dsp)
 target_link_libraries(benchmark_dsp PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_gui_basics juce::juce_gui_extra)
 target_compile_definitions(benchmark_dsp PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
 juce_add_console_app(tests)
-target_sources(tests PRIVATE PluginProcessorTest.cpp PluginProcessor.cpp PluginEditor.cpp)
-target_sources(tests PRIVATE Tests.cpp PluginEditor.cpp PluginProcessor.cpp)
+# Un solo main (TestMain.cpp); el resto de archivos solo registran juce::UnitTest.
+target_sources(tests PRIVATE
+    TestMain.cpp
+    PluginProcessorTest.cpp
+    Tests.cpp
+    PumpModeTest.cpp
+    PluginProcessor.cpp
+    PluginEditor.cpp)
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 juce_generate_juce_header(tests)
 target_link_libraries(tests PRIVATE juce::juce_gui_basics juce::juce_graphics juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)

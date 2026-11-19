@@ -2,9 +2,19 @@
 
 namespace
 {
-    constexpr int kHeaderH = 60;
-    constexpr int kWinW    = 540;
-    constexpr int kWinH    = 300;
+    constexpr int kHeaderH  = 60;
+    constexpr int kNumKnobs = 6;
+    constexpr int kWinW     = 108 * kNumKnobs; // same column width as the original 5-knob layout
+    constexpr int kWinH     = 300;
+
+    // Header selectors (between the title and the sidechain LED)
+    constexpr int kComboY      = 17;
+    constexpr int kComboH      = 26;
+    constexpr int kModeBoxX    = 220;
+    constexpr int kModeBoxW    = 120;
+    constexpr int kRateBoxX    = 350;
+    constexpr int kRateBoxW    = 90;
+    constexpr float kDimmedAlpha = 0.35f;
 
     // Palette
     const juce::Colour kBgColour      { 0xff121212 };
@@ -112,17 +122,29 @@ SidechainCompressorAudioProcessorEditor::SidechainCompressorAudioProcessorEditor
     setupKnob (ratio,     "RATIO");
     setupKnob (attack,    "ATTACK");
     setupKnob (release,   "RELEASE");
-    setupKnob (gain,      "SIDECHAIN LEVEL");
+    setupKnob (depth,     "PUMP DEPTH");
+    setupKnob (gain,      "MAKEUP");   // bound to the "gain" (makeup) parameter
 
     // Attachments connect each slider to its APVTS parameter (sets range + value automatically)
     thresholdAtt = std::make_unique<SliderAttachment> (p.apvts, "threshold", threshold.slider);
     ratioAtt     = std::make_unique<SliderAttachment> (p.apvts, "ratio",     ratio.slider);
     attackAtt    = std::make_unique<SliderAttachment> (p.apvts, "attack",    attack.slider);
     releaseAtt   = std::make_unique<SliderAttachment> (p.apvts, "release",   release.slider);
+    depthAtt     = std::make_unique<SliderAttachment> (p.apvts, "depth",     depth.slider);
     gainAtt      = std::make_unique<SliderAttachment> (p.apvts, "gain",      gain.slider);
 
+    // Items must exist before the attachment syncs the selected index
+    setupComboBox (modeBox, "mode");
+    setupComboBox (rateBox, "rate");
+    modeAtt = std::make_unique<ComboBoxAttachment> (p.apvts, "mode", modeBox);
+    rateAtt = std::make_unique<ComboBoxAttachment> (p.apvts, "rate", rateBox);
+
+    modeParam     = p.apvts.getRawParameterValue ("mode");
+    pumpModeShown = juce::roundToInt (modeParam->load()) == SidechainCompressorAudioProcessor::modePump;
+    updateModeDependentControls (pumpModeShown);
+
     setSize (kWinW, kWinH);
-    startTimerHz (10); // poll sidechain status at 10 Hz
+    startTimerHz (10); // poll sidechain status and mode at 10 Hz
 }
 
 SidechainCompressorAudioProcessorEditor::~SidechainCompressorAudioProcessorEditor()
@@ -155,6 +177,37 @@ void SidechainCompressorAudioProcessorEditor::setupKnob (KnobGroup& kg,
     addAndMakeVisible (l);
 }
 
+void SidechainCompressorAudioProcessorEditor::setupComboBox (juce::ComboBox& box,
+                                                              const juce::String& parameterID)
+{
+    // Item IDs are choice index + 1, which is what ComboBoxAttachment expects
+    if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (audioProcessor.apvts.getParameter (parameterID)))
+        box.addItemList (choice->choices, 1);
+
+    box.setJustificationType (juce::Justification::centred);
+    box.setColour (juce::ComboBox::backgroundColourId, kBgColour);
+    box.setColour (juce::ComboBox::outlineColourId,    kDivider);
+    box.setColour (juce::ComboBox::textColourId,       kValueText);
+    box.setColour (juce::ComboBox::arrowColourId,      kAccentPink);
+    box.setColour (juce::ComboBox::focusedOutlineColourId, kAccentPink);
+    addAndMakeVisible (box);
+}
+
+void SidechainCompressorAudioProcessorEditor::updateModeDependentControls (bool pumpMode)
+{
+    // Controls stay usable (automation and presets still reach them); they are only
+    // dimmed to show which ones the current mode ignores.
+    for (auto* kg : { &threshold, &ratio, &attack, &release })
+    {
+        kg->slider.setAlpha (pumpMode ? kDimmedAlpha : 1.0f);
+        kg->label .setAlpha (pumpMode ? kDimmedAlpha : 1.0f);
+    }
+
+    depth.slider.setAlpha (pumpMode ? 1.0f : kDimmedAlpha);
+    depth.label .setAlpha (pumpMode ? 1.0f : kDimmedAlpha);
+    rateBox.setAlpha      (pumpMode ? 1.0f : kDimmedAlpha);
+}
+
 //==============================================================================
 void SidechainCompressorAudioProcessorEditor::timerCallback()
 {
@@ -166,6 +219,13 @@ void SidechainCompressorAudioProcessorEditor::timerCallback()
         sidechainActive = active;
         // Repaint only the indicator area (top-right corner), not the entire window
         repaint (getWidth() - 140, 0, 140, kHeaderH);
+    }
+
+    const bool pumpMode = juce::roundToInt (modeParam->load()) == SidechainCompressorAudioProcessor::modePump;
+    if (pumpMode != pumpModeShown)
+    {
+        pumpModeShown = pumpMode;
+        updateModeDependentControls (pumpMode);
     }
 }
 
@@ -220,26 +280,29 @@ void SidechainCompressorAudioProcessorEditor::paint (juce::Graphics& g)
                  juce::Justification::centredLeft);
 
     // --- Dividers between knob columns ---
-    const int columnWidth = getWidth() / 5;
+    const int columnWidth = getWidth() / kNumKnobs;
     g.setColour (kDivider);
-    for (int i = 1; i < 5; ++i)
+    for (int i = 1; i < kNumKnobs; ++i)
         g.drawVerticalLine (i * columnWidth, (float)kHeaderH + 8, (float)getHeight() - 8);
 }
 
 //==============================================================================
 void SidechainCompressorAudioProcessorEditor::resized()
 {
+    modeBox.setBounds (kModeBoxX, kComboY, kModeBoxW, kComboH);
+    rateBox.setBounds (kRateBoxX, kComboY, kRateBoxW, kComboH);
+
     auto area = getLocalBounds();
     area.removeFromTop (kHeaderH);
 
     // Provide a neat padding around the grid
     area = area.reduced (10, 10);
 
-    KnobGroup* knobs[] = { &threshold, &ratio, &attack, &release, &gain };
-    const int numKnobs = 5;
+    KnobGroup* knobs[] = { &threshold, &ratio, &attack, &release, &depth, &gain };
+    static_assert (sizeof (knobs) / sizeof (knobs[0]) == kNumKnobs, "keep kNumKnobs in sync with the layout");
 
     // Using Rectangle::removeFromLeft is safe, effective, and perfectly forms a professional grid
-    const int itemWidth = area.getWidth() / numKnobs;
+    const int itemWidth = area.getWidth() / kNumKnobs;
 
     for (auto* kg : knobs)
     {

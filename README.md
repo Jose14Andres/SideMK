@@ -1,26 +1,39 @@
 # SideMk
 
-Compresor estéreo con **sidechain** para producción musical, construido con [JUCE 8](https://juce.com) y C++17.
+Compresor estéreo con **sidechain** y modo **pump** sincronizado al tempo, para producción musical, construido con [JUCE 8](https://juce.com) y C++17.
 Se compila como **VST3** y **Standalone** (AU opcional en macOS).
 
 ## Características
 
 - **Sidechain externo opcional.** Si el bus de sidechain está activo, controla la compresión. Si no, el plugin funciona como un compresor feedforward normal sobre la señal principal.
-- **Detección estéreo enlazada** por pico (`max(|L|, |R|)`), sin las cancelaciones de fase de sumar L+R.
-- **Curva hard-knee** con envolvente de ataque/release (`juce::dsp::BallisticsFilter`).
-- **Makeup gain suavizado** (rampa de 20 ms) para automatizar sin clics.
-- **Medidor de reducción de ganancia** (escala de 24 dB) e indicador LED del estado del sidechain.
+- **Modo Pump**: curva de volumen que se repite en cada división musical (1/16 … 1 compás), clavada al PPQ del transporte del DAW. No depende del nivel del bombo ni del sidechain.
+- **Detector** del compresor: mezcla mono `0.5 * (L + R)` del sidechain, o el canal main L si no hay sidechain.
+- **Curva hard-knee** de `juce::dsp::Compressor` con envolvente de ataque/release (`juce::dsp::BallisticsFilter`).
+- **Makeup gain y profundidad del pump suavizados** (rampa de 20 ms) para automatizar sin clics.
+- **Indicador LED** del estado del bus de sidechain. (Todavía no hay medidor de reducción de ganancia.)
 - **Procesado de audio seguro en tiempo real**: sin reservas de memoria, sin locks y con parámetros leídos desde atómicos.
 
 ### Controles
 
-| Control | Rango | Por defecto |
-|---|---|---|
-| Threshold | −60 … 0 dB | −12 dB |
-| Ratio | 1 … 20 : 1 | 4 : 1 |
-| Attack | 0,1 … 500 ms | 10 ms |
-| Release | 1 … 2000 ms | 100 ms |
-| Sidechain Level (makeup) | −24 … +24 dB | 0 dB |
+| Control | Rango | Por defecto | Modo |
+|---|---|---|---|
+| Mode | Compressor / Pump | Compressor | — |
+| Threshold | −60 … 0 dB | −12 dB | Compressor |
+| Ratio | 1 … 20 : 1 | 4 : 1 | Compressor |
+| Attack | 0,1 … 500 ms | 10 ms | Compressor |
+| Release | 1 … 2000 ms | 100 ms | Compressor |
+| Pump Rate | 1/16, 1/8, 1/4, 1/2, 1 Bar | 1/4 | Pump |
+| Pump Depth | 0 … 100 % | 100 % | Pump |
+| Makeup | −24 … +24 dB | 0 dB | ambos |
+
+La interfaz atenúa los controles que el modo activo no usa; siguen siendo automatizables.
+
+## Modo Pump
+
+La ganancia sigue una curva fija por ciclo (ver `PumpCurve.h`): una caída lineal de 1 ms hasta `1 − depth` (solo para evitar el clic) y una recuperación `1 − exp(−k·t)` normalizada, con `k = 6,5`. `k` es un valor de partida y se ajustará contra una envolvente de referencia medida.
+
+- **Con el transporte del DAW en marcha**, la fase sale del PPQ que reporta el host en cada bloque, así que el dip cae en la rejilla. `1 Bar` usa el compás del host (por ejemplo, 3 negras en 3/4) y el inicio de compás que reporte.
+- **Con el transporte parado o en el Standalone** (que no tiene transporte), la curva corre libre al tempo del host o, si no hay, a 120 BPM.
 
 ## Uso del sidechain
 
@@ -58,6 +71,15 @@ cmake --build build --config Debug --target SideMk_VST3
 cmake --build build --config Debug --target SideMk_Standalone   # la forma más rápida de probar
 ```
 
+### Pruebas
+
+```sh
+cmake --build build --config Debug --target tests
+./build/tests_artefacts/Debug/tests        # devuelve 1 si falla alguna prueba
+```
+
+La curva del pump también se prueba sin JUCE (`tests/PumpCurveTests.cpp`, instrucciones en el propio archivo).
+
 ### Scripts de distribución
 
 - **Windows:** `./build_windows.ps1` compila en Release y copia `SideMk.vst3` y `SideMk.exe` a `%USERPROFILE%\Desktop\dist`. ⚠️ El script **borra y recrea** esa carpeta en cada ejecución.
@@ -72,7 +94,7 @@ cmake --build build --config Debug --target SideMk_Standalone   # la forma más 
 
 ```
 PluginProcessor.{h,cpp}   Motor de audio y parámetros
-GainComputer.h            Curva de compresión (función pura, testeable)
+PumpCurve.h               Curva del modo pump (funciones puras, sin JUCE)
 PluginEditor.{h,cpp}      Interfaz, LookAndFeel y medidor de GR
 JucePluginDefines.h       Macros JucePlugin_* (incluir antes de <JuceHeader.h>)
 CMakeLists.txt            Configuración de build y formatos
@@ -80,8 +102,8 @@ CMakeLists.txt            Configuración de build y formatos
 
 ## Hoja de ruta
 
-Ver [`PLAN_ESCALADO_SIDEMK.md`](PLAN_ESCALADO_SIDEMK.md). Próximo hito: validación del DSP y pruebas automatizadas; después, una beta instalable.
-Más adelante: soft knee, mezcla dry/wet, filtro en el sidechain y presets.
+Próximo hito: compilar y ejecutar el target `tests`, medir una envolvente de referencia del pump (seno constante, BPM conocido, 1/4) y ajustar `k` con un null test. Después, una beta instalable.
+Más adelante: medidor de reducción de ganancia, soft knee, mezcla dry/wet, filtro en el sidechain y presets.
 
 ## Autor
 
